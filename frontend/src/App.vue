@@ -131,15 +131,11 @@
 import {ref, reactive, onMounted, nextTick, onBeforeUnmount, watch} from 'vue'
 import axios from 'axios'
 
-const BASE_URL = 'http://10.192.1.254:8001'
-const WS_URL = 'ws://10.192.1.254:8001/ws'
-
 const messagesContainer = ref(null)
 const messages = ref([])
-const lastId = ref(null)
-const isLoading = ref(false) // 这个变量禁止重复加载
+const isLoading = ref(false) // 这个变量禁止重复加载新信息
 const isDrawing = ref(false) // 这个变量仅用于禁止奇妙的滚动，在加载新信息成功后100ms内设为真
-const savedScrollTop = ref(0)
+const savedScrollTop = ref(0) // 这个变量仅用于禁止奇妙的滚动，保存滚动位置，以便在加载新信息后恢复
 const user = reactive({ip: '', nickname: ''})
 const inputText = ref('')
 const uploadProgress = ref(null)
@@ -156,7 +152,7 @@ const wsStatus = ref('CLOSED')
 
 // 初始化 WebSocket 连接
 const initWebSocket = () => {
-  ws.value = new WebSocket(WS_URL)
+  ws.value = new WebSocket(`ws://${window.location.host}/ws`)
 
   // 设置超时
   const timeout = setTimeout(() => {
@@ -193,7 +189,6 @@ const initWebSocket = () => {
   }
 }
 
-
 // 发送消息方法
 const safeSend = (data) => {
   if (ws.value?.readyState === WebSocket.OPEN) {
@@ -206,7 +201,7 @@ const safeSend = (data) => {
 // 初始化用户信息
 const initUser = async () => {
   try {
-    const res = await axios.get(`${BASE_URL}/api/myname`)
+    const res = await axios.get(`/api/myname`)
     user.ip = res.data.ip
     user.nickname = res.data.nickname
   } catch (err) {
@@ -223,13 +218,12 @@ const loadMessages = async () => {
   try {
     if (isLoading.value) return // isLoading是这个函数的并发锁
     isLoading.value = true
-    const params = lastId.value ? {last_id: lastId.value} : {}
-    const res = await axios.get(`${BASE_URL}/api/messages`, {params})
+    const params = messages.value.length > 0 ? {last_id: messages.value[messages.value.length - 1].ID} : {}
+    const res = await axios.get(`/api/messages`, {params})
     if (res.data.length) {
       isDrawing.value = true
       const newMessages = res.data
       messages.value.push(...newMessages)
-      lastId.value = newMessages[newMessages.length - 1]?.ID;
     }
   } catch (err) {
     console.error('加载消息失败:', err)
@@ -256,7 +250,6 @@ const reloadMessages = async () => {
   }
 
   messages.value = []
-  lastId.value = null
   await loadMessages()
   scrollToBottom()
 }
@@ -276,7 +269,6 @@ const sendTextMessage = () => {
   }
 }
 
-
 // 触发文件选择
 const triggerFileInput = () => {
   fileInput.value?.click()
@@ -295,7 +287,7 @@ const handleFileSelected = async (event) => {
     totalSize.value = (selectedFile.size / 1024 / 1024).toFixed(1)
     uploadProgress.value = 0
     uploadedSize.value = 0
-    await axios.post(`${BASE_URL}/api/upload`, formData, {
+    await axios.post(`/api/upload`, formData, {
       onUploadProgress: (progressEvent) => {
         uploadedSize.value = (progressEvent.loaded / 1024 / 1024).toFixed(1)
         uploadProgress.value = (progressEvent.loaded / progressEvent.total) * 100
@@ -308,7 +300,6 @@ const handleFileSelected = async (event) => {
     event.target.value = ''
   }
 }
-
 
 // 处理滚动加载
 const handleScroll = () => {
@@ -335,6 +326,11 @@ const scrollToBottom = () => {
   })
 }
 
+const showImagePreview = (url) => {
+  previewImage.value = url
+  imageDialog.value = true
+}
+
 // 生命周期
 onMounted(async () => {
   initWebSocket()
@@ -350,7 +346,7 @@ onBeforeUnmount(() => {
 // 工具函数
 const isMyMessage = (msg) => msg.Nickname === user.nickname
 const isImage = (filename) => /\.(jpg|jpeg|png|gif|webp)$/i.test(filename)
-const getFileUrl = (fileId) => `${BASE_URL}/api/files/${fileId}`
+const getFileUrl = (fileId) => `/api/files/${fileId}`
 const formatTime = (timestamp) => {
   const date = new Date(timestamp);
   const now = new Date();
@@ -377,10 +373,6 @@ const formatTime = (timestamp) => {
   // 当天显示时分秒
   return `${h}:${min}:${s}`;
 };
-const showImagePreview = (url) => {
-  previewImage.value = url
-  imageDialog.value = true
-}
 </script>
 
 <style scoped>

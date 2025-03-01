@@ -11,7 +11,6 @@ import (
     "time"
     "strings"
 
-    "github.com/gin-contrib/cors"
     "github.com/gin-gonic/gin"
     "github.com/gorilla/websocket"
     _ "github.com/mattn/go-sqlite3"
@@ -21,9 +20,10 @@ import (
 )
 
 const (
-    WhitelistFile   = "/chat/whitelist.txt"
-    DatabasePath    = "/chat/db.sqlite"
-    UploadDirectory = "/chat/files/"
+    WhitelistFile   = "/mine/chat/whitelist.txt"
+    DatabasePath    = "/mine/chat/db.sqlite"
+    UploadDirectory = "/mine/chat/files/"
+    StaticDirectory = "/mine/chat/static/"
 )
 
 type ConnInfo struct {
@@ -34,7 +34,7 @@ type ConnInfo struct {
 var (
     ipNicknameMap   map[string]string
     ipMapMutex      sync.RWMutex
-    upgrader        = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
+    upgrader        = websocket.Upgrader{}
     wsConnections   = make(map[*websocket.Conn]*ConnInfo)
     wsConnectionsMu sync.RWMutex
     db              *gorm.DB
@@ -65,13 +65,7 @@ func init() {
 
 func main() {
     r := gin.Default()
-    r.Use(cors.New(cors.Config{
-        AllowOrigins:     []string{"*"},
-        AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-        AllowHeaders:     []string{"Origin", "Content-Length", "Content-Type", "Authorization"},
-        AllowCredentials: true,
-        MaxAge:           12 * time.Hour,
-    }))
+
     r.Use(IPWhitelistMiddleware())
 
     r.GET("/ws", handleWebSocket)
@@ -79,6 +73,11 @@ func main() {
     r.POST("/api/upload", handleUpload)
     r.GET("/api/files/:file_id", downloadFile)
     r.GET("/api/myname", getMyName)
+
+    r.NoRoute(func(c *gin.Context) {
+        c.File(filepath.Join(StaticDirectory, "index.html"))
+    })
+    r.Static("/static", StaticDirectory)
 
     go func() {
         ticker := time.NewTicker(5 * time.Minute)
@@ -96,13 +95,13 @@ func main() {
         }
     }()
 
-    logger.Info("Server is starting on :8001")
-    r.Run(":8001")
+    logger.Info("Server is starting on :8008")
+    r.Run(":8008")
 }
 
 
 
-func IPWhitelistMiddleware() gin.HandlerFunc { // 配合Wireguard使用，以IP作为登录凭证
+func IPWhitelistMiddleware() gin.HandlerFunc {
     return func(c *gin.Context) {
         clientIP := c.ClientIP()
         ipMapMutex.RLock()
@@ -175,7 +174,7 @@ func getMessages(c *gin.Context) {
     var messages []Message
     lastID := c.Query("last_id")
     query := db.Order("id desc").Limit(20)
-    
+
     if lastID != "" {
         query = query.Where("id < ?", lastID)
     }
@@ -294,44 +293,44 @@ func cleanupOldMessagesAndFiles() {
         threshold := time.Now().Add(- 7 * 24 * time.Hour)
         var oldMessages []Message
         var filesToDelete []File
-    
+
         err := db.Transaction(func(tx *gorm.DB) error {
             if err := tx.Where("timestamp < ?", threshold).Find(&oldMessages).Error; err != nil {
                 return err
             }
-    
+
             var fileIDs []uint
             for _, msg := range oldMessages {
                 if msg.Type == "file" {
                     fileIDs = append(fileIDs, msg.FileID)
                 }
             }
-    
+
             if len(fileIDs) > 0 {
                 if err := tx.Where("id IN ?", fileIDs).Find(&filesToDelete).Error; err != nil {
                     return err
                 }
             }
-    
+
             tx.Where("timestamp < ?", threshold).Delete(&Message{})
             if len(fileIDs) > 0 {
                 tx.Where("id IN ?", fileIDs).Delete(&File{})
             }
             return nil
         })
-    
+
         if err != nil {
             logger.Errorf("Cleanup failed: %v", err)
             return
         }
-    
+
         for _, file := range filesToDelete {
             filePath := filepath.Join(UploadDirectory, file.StoredName)
             if err := os.Remove(filePath); err != nil {
                 logger.Warnf("Failed to delete file %s: %v", filePath, err)
             }
         }
-    
+
         logger.Infof("Cleanup completed. Messages: %d, Files: %d", len(oldMessages), len(filesToDelete))
     }
 
@@ -343,7 +342,7 @@ func broadcastMessage(msg Message) {
         go func(c *websocket.Conn, i *ConnInfo) {
             i.Mu.Lock()
             defer i.Mu.Unlock()
-            
+
             if err := c.WriteJSON(msg); err != nil {
                 logger.Warnf("Send failed to %s: %v", i.Nickname, err)
                 wsConnectionsMu.Lock()

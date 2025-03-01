@@ -1,6 +1,6 @@
 {
-  "name": "chatv2",
-  "version": "0.0.0",
+  "name": "dumpling-chat",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,10 +10,8 @@
   },
   "dependencies": {
     "@mdi/font": "^7.4.47",
-    "@vueuse/core": "^12.7.0",
     "axios": "^1.8.1",
     "vue": "^3.5.13",
-    "vue-websocket": "^0.2.3",
     "vuetify": "^3.7.14"
   },
   "devDependencies": {
