@@ -48,15 +48,24 @@
                 max-width="200"
                 class="my-2"
             ></v-img>
-            <v-btn
-                v-else
+            <div v-else
+              style="display: flex; flex-direction: row; align-items: center; gap: 8px"
+            >
+              <v-btn
                 :href="getFileUrl(msg.FileID)"
                 download
-                variant="text"
                 color="primary"
-            >
-              {{ msg.Content }}
-            </v-btn>
+                text
+                class="mt-2 px-4 py-2"                
+              >
+                下载
+              </v-btn>
+              <span style="white-space: normal;word-break: break-word; padding: 4px 4px;">
+                {{ msg.Content }}
+              </span>
+            </div>
+            
+            
           </template>
         </div>
       </div>
