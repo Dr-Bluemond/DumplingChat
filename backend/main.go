@@ -66,6 +66,9 @@ func init() {
 func main() {
     r := gin.Default()
 
+    if err := r.SetTrustedProxies([]string{}); err != nil {
+        logger.Info("Failed to SetTrustedProxies")
+    }
     r.Use(IPWhitelistMiddleware())
 
     r.GET("/ws", handleWebSocket)
