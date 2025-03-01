@@ -16,7 +16,9 @@
       </v-chip>
     </v-app-bar>
 
-    <v-main style="height: calc(100vh - 64px); display: flex; flex-direction: column; overflow-y: hidden">
+    <v-main style="height: 0px; display: flex; flex-direction: column; overflow-y: hidden ;">
+      <!-- 这里的height: 0px;太有趣了！不采用100vh而是0px，消息列表和输入框可以利用flex正确啊占据空间。
+        另外，手机浏览器会将输入框挤到画面外的bug也就此解决了-->
       <div
           ref="messagesContainer"
           class="messages-container"
@@ -386,7 +388,7 @@ const formatTime = (timestamp) => {
 
 <style scoped>
 .messages-container {
-  flex: 1;
+  flex: 1 1 auto;
   overflow-y: auto;
   padding-left: 8px;
   padding-right: 8px;
