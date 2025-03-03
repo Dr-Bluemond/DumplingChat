@@ -16,7 +16,7 @@
       </v-chip>
     </v-app-bar>
 
-    <v-main style="height: 0px; display: flex; flex-direction: column; overflow-y: hidden ;">
+    <v-main style="height: 0; display: flex; flex-direction: column; overflow-y: hidden ;">
       <!-- 这里的height: 0px;太有趣了！不采用100vh而是0px，消息列表和输入框可以利用flex正确啊占据空间。
         另外，手机浏览器会将输入框挤到画面外的bug也就此解决了-->
       <div
@@ -360,7 +360,7 @@ const handleScroll = () => {
   // 计算滚动位置与容器尺寸
   const {scrollTop, scrollHeight, clientHeight} = container
   const bottomPosition = scrollHeight - (-scrollTop) - clientHeight
-  // 当接近底部时加载更多（阈值 40px）
+  // 当接近底部时加载更多
   if (bottomPosition < 100 && !isLoading.value) {
     loadMessages()
   }
