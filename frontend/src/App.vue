@@ -160,10 +160,29 @@ let lastScrollHeight = -1
 let freezeCounter = 0
 let savedScrollTop = 0 // 这个变量仅用于禁止奇妙的滚动，保存滚动位置，以便在加载新信息后恢复，该BUG似乎在苹果设备和火狐浏览器上均不存在，仅当Windows+Chrome才有这个问题。
 
+function isChrome() {
+  var ua = window.navigator.userAgent.toLowerCase();
+  if(ua.indexOf("edge") !== -1 || ua.indexOf("edga") !== -1 || ua.indexOf("edgios") !== -1) {
+    //pass
+  } else if (ua.indexOf("opera") !== -1 || ua.indexOf("opr") !== -1) {
+    //pass
+  } else if (ua.indexOf("samsungbrowser") !== -1) {
+    //pass
+  } else if (ua.indexOf("ucbrowser") !== -1) {
+    //pass
+  } else if(ua.indexOf("chrome") !== -1 || ua.indexOf("crios") !== -1) {
+    return true
+  }
+  return false
+}
+function isWindows() {
+  var ua = window.navigator.userAgent.toLowerCase();
+  return ua.indexOf("windows nt") !== -1;
+}
 
-function loop() {
+function fixScrollTopProblem() {
   tick = (tick + 1) % 100000 // FOR DEBUG
-  requestAnimationFrame(loop);
+  requestAnimationFrame(fixScrollTopProblem);
   const container = messagesContainer.value
   if (!container) return
   if (freezeCounter > 0) {
@@ -179,8 +198,9 @@ function loop() {
   }
   lastScrollHeight = container.scrollHeight
 }
-// 启动循环
-requestAnimationFrame(loop);
+// 该手动修复仅针对Windows生效，其他设备搞了反而不流畅！
+if (isChrome() && isWindows())
+  requestAnimationFrame(fixScrollTopProblem); // 启动循环
 
 // WebSocket 相关变量
 const ws = ref(null)
@@ -341,7 +361,7 @@ const handleScroll = () => {
   const {scrollTop, scrollHeight, clientHeight} = container
   const bottomPosition = scrollHeight - (-scrollTop) - clientHeight
   // 当接近底部时加载更多（阈值 40px）
-  if (bottomPosition < 40 && !isLoading.value) {
+  if (bottomPosition < 100 && !isLoading.value) {
     loadMessages()
   }
 }
