@@ -27,8 +27,9 @@ const (
 )
 
 type ConnInfo struct {
-	Nickname string
-	Mu       sync.Mutex
+	Nickname  string
+	SendChan  chan Message
+	CloseChan chan struct{}
 }
 
 var (
@@ -39,6 +40,7 @@ var (
 	wsConnectionsMu sync.RWMutex
 	db              *gorm.DB
 	logger          = logrus.New()
+	messageSequenceLock sync.Mutex
 )
 
 type Message struct {
@@ -133,14 +135,36 @@ func handleWebSocket(c *gin.Context) {
 		logger.Errorf("WebSocket upgrade failed: %v", err)
 		return
 	}
-	defer conn.Close()
 
 	nickname := c.MustGet("nickname").(string)
+	sendChan := make(chan Message, 100)
+	closeChan := make(chan struct{}, 2)
+
 	wsConnectionsMu.Lock()
-	wsConnections[conn] = &ConnInfo{Nickname: nickname}
+	wsConnections[conn] = &ConnInfo{
+		Nickname:  nickname,
+		SendChan:  sendChan,
+		CloseChan: closeChan,
+	}
 	wsConnectionsMu.Unlock()
 
 	logger.Infof("WebSocket connected: %s", nickname)
+
+	// 启动消息发送协程
+	go func() {
+		for {
+			select {
+			case msg := <-sendChan:
+				if err := conn.WriteJSON(msg); err != nil {
+					logger.Infof("Send failed to %s: %v", nickname, err)
+					conn.Close()
+					return
+				}
+			case <-closeChan:
+				return
+			}
+		}
+	}()
 
 	for {
 		var msg struct{ Content string }
@@ -149,6 +173,7 @@ func handleWebSocket(c *gin.Context) {
 			break
 		}
 
+		messageSequenceLock.Lock()
 		message := Message{
 			Nickname:  nickname,
 			Content:   msg.Content,
@@ -159,15 +184,19 @@ func handleWebSocket(c *gin.Context) {
 		if err := db.Create(&message).Error; err != nil {
 			logger.Errorf("Save message failed: %v", err)
 		} else {
+			broadcastMessage(message)
 			logger.Infof("Message saved: %s", msg.Content)
 		}
-
-		broadcastMessage(message)
+		messageSequenceLock.Unlock()
 	}
 
+	// 清理逻辑
+	closeChan <- struct{}{}
+	close(closeChan)
 	wsConnectionsMu.Lock()
 	delete(wsConnections, conn)
 	wsConnectionsMu.Unlock()
+	conn.Close()
 	logger.Infof("WebSocket closed: %s", nickname)
 }
 
@@ -216,6 +245,8 @@ func handleUpload(c *gin.Context) {
 		return
 	}
 
+	messageSequenceLock.Lock()
+	defer messageSequenceLock.Unlock()
 	fileRecord := File{OriginalName: header.Filename, StoredName: storedName}
 	message := Message{
 		Nickname:  c.MustGet("nickname").(string),
@@ -340,17 +371,16 @@ func broadcastMessage(msg Message) {
 	defer wsConnectionsMu.RUnlock()
 
 	for conn, info := range wsConnections {
-		go func(c *websocket.Conn, i *ConnInfo) {
-			i.Mu.Lock()
-			defer i.Mu.Unlock()
-
-			if err := c.WriteJSON(msg); err != nil {
-				logger.Warnf("Send failed to %s: %v", i.Nickname, err)
-				wsConnectionsMu.Lock()
-				delete(wsConnections, c)
-				wsConnectionsMu.Unlock()
-				c.Close()
-			}
-		}(conn, info)
+		select {
+		case info.SendChan <- msg: // 非阻塞发送
+		default:
+			// 通道满时处理
+			logger.Warnf("Connection %s buffer full, closing", info.Nickname)
+			info.CloseChan <- struct{}{}
+			conn.Close()
+			wsConnectionsMu.Lock()
+			delete(wsConnections, conn)
+			wsConnectionsMu.Unlock()
+		}
 	}
 }

@@ -62,7 +62,7 @@
               >
                 下载
               </v-btn>
-              <span style="white-space: normal;word-break: break-word; padding: 4px 4px;">
+              <span style="white-space: normal; word-break: break-word; padding: 4px 4px;">
                 {{ msg.Content }}
               </span>
             </div>
