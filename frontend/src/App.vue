@@ -145,8 +145,6 @@ import axios from 'axios'
 const messagesContainer = ref(null)
 const messages = ref([])
 const isLoading = ref(false) // 这个变量禁止重复加载新信息
-const isDrawing = ref(false) // 这个变量仅用于禁止奇妙的滚动，在加载新信息成功后100ms内设为真
-const savedScrollTop = ref(0) // 这个变量仅用于禁止奇妙的滚动，保存滚动位置，以便在加载新信息后恢复
 const user = reactive({ip: '', nickname: ''})
 const inputText = ref('')
 const uploadProgress = ref(null)
@@ -156,6 +154,33 @@ const imageDialog = ref(false)
 const previewImage = ref('')
 const fileInput = ref(null)
 const isUploading = ref(false)
+
+let tick = 0; // FOR DEBUG
+let lastScrollHeight = -1
+let freezeCounter = 0
+let savedScrollTop = 0 // 这个变量仅用于禁止奇妙的滚动，保存滚动位置，以便在加载新信息后恢复，该BUG似乎在苹果设备和火狐浏览器上均不存在，仅当Windows+Chrome才有这个问题。
+
+
+function loop() {
+  tick = (tick + 1) % 100000 // FOR DEBUG
+  requestAnimationFrame(loop);
+  const container = messagesContainer.value
+  if (!container) return
+  if (freezeCounter > 0) {
+    freezeCounter--
+    console.log(`[${tick}] container.scrollTop is ${container.scrollTop} but is being set to ${savedScrollTop}`);
+    container.scrollTop = savedScrollTop
+  }
+  else if (lastScrollHeight !== container.scrollHeight) { // 当总高度改变时，再过几个tick之内会发生奇怪的事情！所以要锁定几个tick的scrollTop！！
+    console.log(`[${tick}] container.scrollHeight is changing! was ${lastScrollHeight} and is now ${container.scrollHeight}, container.scrollTop is saved as ${container.scrollTop}`
+    )
+    savedScrollTop = container.scrollTop
+    freezeCounter += 5
+  }
+  lastScrollHeight = container.scrollHeight
+}
+// 启动循环
+requestAnimationFrame(loop);
 
 // WebSocket 相关变量
 const ws = ref(null)
@@ -224,7 +249,7 @@ const initUser = async () => {
 const loadMessages = async () => {
   const container = messagesContainer.value
   if (!container) return
-  savedScrollTop.value = container.scrollTop // 加载新信息时会发生令人不愉快的滚动，记录当前值以强制保持。
+  // savedScrollTop.value = container.scrollTop // 加载新信息时会发生令人不愉快的滚动，记录当前值用于强制保持。
 
   try {
     if (isLoading.value) return // isLoading是这个函数的并发锁
@@ -232,7 +257,6 @@ const loadMessages = async () => {
     const params = messages.value.length > 0 ? {last_id: messages.value[messages.value.length - 1].ID} : {}
     const res = await axios.get(`/api/messages`, {params})
     if (res.data.length) {
-      isDrawing.value = true
       const newMessages = res.data
       messages.value.push(...newMessages)
     }
@@ -242,14 +266,11 @@ const loadMessages = async () => {
     setTimeout(() => {
       isLoading.value = false // 110ms内不允许再加载新的（防止某些抖动导致加载多了）
     }, 110)
-    setTimeout(() => {
-      isDrawing.value = false // 100ms内不允许再滚动
-    }, 100)
   }
 }
 
 const reloadMessages = async () => {
-  while (isLoading.value) { // 等这个互斥锁，确保没有其他加载新信息的线程后进行清空加载操作
+  while (isLoading.value) { // 等这个互斥锁，确保没有其他加载新信息的线程后，再进行清空加载操作
     await new Promise((resolve) => {
       const stop = watch(isLoading, (newVal) => {
         if (!newVal) {
@@ -316,9 +337,6 @@ const handleFileSelected = async (event) => {
 const handleScroll = () => {
   const container = messagesContainer.value
   if (!container) return
-  if (isDrawing.value) {
-    container.scrollTop = savedScrollTop.value
-  }
   // 计算滚动位置与容器尺寸
   const {scrollTop, scrollHeight, clientHeight} = container
   const bottomPosition = scrollHeight - (-scrollTop) - clientHeight
